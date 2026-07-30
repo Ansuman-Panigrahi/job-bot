@@ -1,79 +1,59 @@
 import { chromium, Browser, BrowserContext, Page } from 'playwright';
-import { BrowserManagerOptions, NavigationResult } from './types';
-import { BrowserError, NavigationError } from '../utils/errors';
+import { BrowserError } from '../utils/errors';
 import { logger } from '../utils/logger';
+
+export interface BrowserOptions {
+  headless?: boolean;
+  defaultTimeout?: number;
+}
 
 export class BrowserManager {
   private browser: Browser | null = null;
   private context: BrowserContext | null = null;
   private page: Page | null = null;
-  private readonly options: BrowserManagerOptions;
+  private readonly headless: boolean;
+  private readonly defaultTimeout: number;
 
-  constructor(options: BrowserManagerOptions = {}) {
-    this.options = {
-      headless: options.headless ?? true,
-      defaultTimeout: options.defaultTimeout ?? 30000,
-    };
+  constructor(options: BrowserOptions = {}) {
+    this.headless = options.headless ?? true;
+    this.defaultTimeout = options.defaultTimeout ?? 30000;
   }
 
-  public async launch(): Promise<void> {
+  public async launch(): Promise<Page> {
     try {
-      logger.info(`Launching Chromium browser (headless: ${this.options.headless})...`);
-      this.browser = await chromium.launch({
-        headless: this.options.headless,
+      logger.info(`Launching Chromium (headless: ${this.headless})...`);
+      this.browser = await chromium.launch({ headless: this.headless });
+      this.context = await this.browser.newContext({
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
       });
-
-      this.context = await this.browser.newContext();
       this.page = await this.context.newPage();
-      this.page.setDefaultTimeout(this.options.defaultTimeout!);
-      logger.info('Browser instance and page created successfully.');
+      this.page.setDefaultTimeout(this.defaultTimeout);
+      logger.info('Browser ready.');
+      return this.page;
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      throw new BrowserError(`Failed to launch browser: ${message}`);
+      throw new BrowserError(`Failed to launch browser: ${err instanceof Error ? err.message : err}`);
     }
   }
 
-  public async navigateTo(url: string): Promise<NavigationResult> {
+  public getPage(): Page {
     if (!this.page) {
       throw new BrowserError('Browser page is not initialized. Call launch() first.');
     }
-
-    try {
-      logger.info(`Navigating to URL: ${url}`);
-      await this.page.goto(url, { waitUntil: 'domcontentloaded' });
-
-      const title = await this.page.title();
-      logger.info(`Successfully navigated to "${url}". Page title: "${title}"`);
-
-      return {
-        url: this.page.url(),
-        title,
-      };
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      throw new NavigationError(`Failed navigating to "${url}": ${message}`);
-    }
+    return this.page;
   }
 
   public async close(): Promise<void> {
     try {
-      logger.info('Closing browser context and instance...');
-      if (this.page) {
-        await this.page.close();
-        this.page = null;
-      }
-      if (this.context) {
-        await this.context.close();
-        this.context = null;
-      }
-      if (this.browser) {
-        await this.browser.close();
-        this.browser = null;
-      }
-      logger.info('Browser closed successfully.');
+      logger.info('Closing browser...');
+      if (this.page) await this.page.close();
+      if (this.context) await this.context.close();
+      if (this.browser) await this.browser.close();
+      this.page = null;
+      this.context = null;
+      this.browser = null;
+      logger.info('Browser closed.');
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      throw new BrowserError(`Failed to close browser cleanly: ${message}`);
+      throw new BrowserError(`Failed to close browser: ${err instanceof Error ? err.message : err}`);
     }
   }
 }
