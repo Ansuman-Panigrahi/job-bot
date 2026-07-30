@@ -17,25 +17,9 @@ async function main(): Promise<void> {
     const provider = new NaukriProvider(page);
     const jobs = await provider.collectJobs();
 
-    logger.info(`Collection complete! Found ${jobs.length} jobs.`);
-
-    console.log(`\nFound ${jobs.length} jobs\n`);
-    console.log('---------------------------------');
-
-    for (const job of jobs) {
-      console.log(`\n${job.title}`);
-      console.log(`${job.company}`);
-      console.log(`${job.location}`);
-      console.log(`${job.experience}`);
-      if (job.salary) {
-        console.log(`${job.salary}`);
-      }
-      if (job.postedDate) {
-        console.log(`Posted: ${job.postedDate}`);
-      }
-      console.log(`${job.url}`);
-      console.log('\n---------------------------------');
-    }
+    console.log('\n================================================');
+    console.log(`FINAL COLLECTION SUMMARY: Found ${jobs.length} valid jobs`);
+    console.log('================================================\n');
   } catch (error) {
     logger.error('Job collection process failed:', error);
     process.exitCode = 1;
