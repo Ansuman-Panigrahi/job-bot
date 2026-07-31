@@ -12,4 +12,5 @@ export const config = {
   searchLocation: process.env.SEARCH_LOCATION || 'Bangalore',
   searchExperience: process.env.SEARCH_EXPERIENCE || '2',
   maxResults: Number(process.env.MAX_RESULTS) || 50,
+  generateAllJobsReport: process.env.GENERATE_ALL_JOBS_REPORT === 'true',
 };

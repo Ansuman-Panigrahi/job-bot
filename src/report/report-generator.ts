@@ -5,6 +5,8 @@ import { logger } from '../utils/logger';
 
 export interface ReportOptions {
   generatedAt?: Date;
+  title?: string;
+  reportType?: 'new' | 'all';
 }
 
 export class ReportGenerator {
@@ -14,6 +16,10 @@ export class ReportGenerator {
    */
   public static generateReportHtml(jobs: Job[], options: ReportOptions = {}): string {
     const generatedAt = options.generatedAt || new Date();
+    const reportTitle = options.title || (options.reportType === 'all' ? 'All Stored Jobs' : 'New Jobs Found');
+    const badgeText = options.reportType === 'all' ? `${jobs.length} Total` : `${jobs.length} New`;
+    const statusText = options.reportType === 'all' ? 'stored' : 'newly discovered';
+
     const formattedDate = generatedAt.toLocaleString('en-GB', {
       day: '2-digit',
       month: 'short',
@@ -336,8 +342,8 @@ export class ReportGenerator {
   <div class="container">
     <header>
       <div class="header-title-row">
-        <h1>New Jobs Found</h1>
-        <span class="job-count-pill" id="totalBadge">${jobs.length} New</span>
+        <h1>${this.escapeHtml(reportTitle)}</h1>
+        <span class="job-count-pill" id="totalBadge">${this.escapeHtml(badgeText)}</span>
       </div>
 
       <div class="metadata-grid">
@@ -350,7 +356,7 @@ export class ReportGenerator {
           <div class="meta-value">${this.escapeHtml(sources)}</div>
         </div>
         <div>
-          <div class="meta-label">Total Discovered</div>
+          <div class="meta-label">Total Jobs</div>
           <div class="meta-value">${jobs.length} Jobs</div>
         </div>
       </div>
@@ -366,7 +372,7 @@ export class ReportGenerator {
     </div>
 
     <div class="status-summary" id="statusSummary">
-      Showing ${jobs.length} of ${jobs.length} newly discovered jobs
+      Showing ${jobs.length} of ${jobs.length} ${statusText} jobs
     </div>
 
     <div class="jobs-grid" id="jobsGrid">
@@ -428,7 +434,7 @@ export class ReportGenerator {
    * Saves the HTML content string to a file in the reports/ directory.
    * Output filename format: jobs-report-YYYY-MM-DD-HH-mm-ss.html
    */
-  public static saveReportToFile(htmlContent: string, outputDir?: string): string {
+  public static saveReportToFile(htmlContent: string, prefixFilename: string = 'jobs-report', outputDir?: string): string {
     const targetDir = outputDir || path.resolve(process.cwd(), 'reports');
 
     if (!fs.existsSync(targetDir)) {
@@ -443,7 +449,7 @@ export class ReportGenerator {
     const minutes = String(now.getMinutes()).padStart(2, '0');
     const seconds = String(now.getSeconds()).padStart(2, '0');
 
-    const filename = `jobs-report-${year}-${month}-${day}-${hours}-${minutes}-${seconds}.html`;
+    const filename = `${prefixFilename}-${year}-${month}-${day}-${hours}-${minutes}-${seconds}.html`;
     const filePath = path.join(targetDir, filename);
 
     fs.writeFileSync(filePath, htmlContent, 'utf-8');

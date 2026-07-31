@@ -124,6 +124,20 @@ export class JobDatabase {
     });
   }
 
+  public async getAllJobs(limit?: number): Promise<Job[]> {
+    if (!this.db) return [];
+    return new Promise((resolve, reject) => {
+      const sql = limit
+        ? `SELECT id, source, title, company, location, experience, salary, url, created_at as createdAt FROM jobs ORDER BY created_at DESC LIMIT ?`
+        : `SELECT id, source, title, company, location, experience, salary, url, created_at as createdAt FROM jobs ORDER BY created_at DESC`;
+      const params = limit ? [limit] : [];
+      this.db!.all(sql, params, (err, rows: any[]) => {
+        if (err) return reject(err);
+        resolve(rows || []);
+      });
+    });
+  }
+
   public async close(): Promise<void> {
     if (!this.db) return;
     return new Promise((resolve, reject) => {

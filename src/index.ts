@@ -37,10 +37,24 @@ async function main(): Promise<void> {
     const totalDbJobs = await db.getTotalJobsCount();
     const duplicatesCount = totalScrapedCount - allNewlyDiscovered.length;
 
-    let reportPath: string | null = null;
+    let newReportPath: string | null = null;
     if (allNewlyDiscovered.length > 0) {
-      const html = ReportGenerator.generateReportHtml(allNewlyDiscovered);
-      reportPath = ReportGenerator.saveReportToFile(html);
+      const html = ReportGenerator.generateReportHtml(allNewlyDiscovered, { reportType: 'new' });
+      newReportPath = ReportGenerator.saveReportToFile(html, 'jobs-report');
+    }
+
+    const isAllReportRequested = process.argv.includes('--all') || config.generateAllJobsReport;
+    let allReportPath: string | null = null;
+
+    if (isAllReportRequested) {
+      const allHistoricalJobs = await db.getAllJobs();
+      if (allHistoricalJobs.length > 0) {
+        const allHtml = ReportGenerator.generateReportHtml(allHistoricalJobs, {
+          reportType: 'all',
+          title: 'All Stored Jobs',
+        });
+        allReportPath = ReportGenerator.saveReportToFile(allHtml, 'all-jobs-report');
+      }
     }
 
     console.log('\n------------------------------------');
@@ -49,12 +63,15 @@ async function main(): Promise<void> {
     console.log(`Duplicates     : ${duplicatesCount}`);
     console.log(`Database Total : ${totalDbJobs}`);
     console.log('');
-    if (reportPath) {
-      console.log(`HTML Report`);
-      console.log(`${reportPath}`);
+
+    if (newReportPath) {
+      console.log(`New Jobs Report : ${newReportPath}`);
     } else {
-      console.log(`No new jobs found.`);
-      console.log(`Report not generated.`);
+      console.log(`No new jobs found. New jobs report not generated.`);
+    }
+
+    if (allReportPath) {
+      console.log(`All Jobs Report : ${allReportPath}`);
     }
     console.log('------------------------------------\n');
   } catch (error) {
