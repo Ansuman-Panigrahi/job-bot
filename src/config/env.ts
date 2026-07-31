@@ -18,4 +18,5 @@ export const config = {
   emailTo: process.env.EMAIL_TO || '',
   gmailUser: process.env.GMAIL_USER || '',
   gmailAppPassword: process.env.GMAIL_APP_PASSWORD || '',
+  postedDaysLimit: Number(process.env.POSTED_DAYS_LIMIT) || 0,
 };

@@ -5,6 +5,7 @@ import { Job } from '../models/job';
 import { config } from '../config/env';
 import { logger } from '../utils/logger';
 import { BrowserError } from '../utils/errors';
+import { parsePostedDate, isFresh } from '../utils/date-utils';
 
 export class NaukriProvider {
   private readonly keywords: string;
@@ -303,6 +304,15 @@ export class NaukriProvider {
         logger.warn(`Skipped card #${index} ("${raw.title}"): Duplicate job URL already collected.`);
         skippedCount++;
         continue;
+      }
+
+      if (raw.postedDate && config.postedDaysLimit > 0) {
+        const parsedDate = parsePostedDate(raw.postedDate);
+        if (parsedDate && !isFresh(parsedDate, config.postedDaysLimit)) {
+          logger.info(`Skipped card #${index} ("${raw.title}"): Older than configured freshness limit (${config.postedDaysLimit} days).`);
+          skippedCount++;
+          continue;
+        }
       }
 
       const validJob: Job = {
