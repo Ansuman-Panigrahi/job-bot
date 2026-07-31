@@ -13,4 +13,9 @@ export const config = {
   searchExperience: process.env.SEARCH_EXPERIENCE || '2',
   maxResults: Number(process.env.MAX_RESULTS) || 50,
   generateAllJobsReport: process.env.GENERATE_ALL_JOBS_REPORT === 'true',
+  emailEnabled: process.env.EMAIL_ENABLED === 'true',
+  emailFrom: process.env.EMAIL_FROM || '',
+  emailTo: process.env.EMAIL_TO || '',
+  gmailUser: process.env.GMAIL_USER || '',
+  gmailAppPassword: process.env.GMAIL_APP_PASSWORD || '',
 };

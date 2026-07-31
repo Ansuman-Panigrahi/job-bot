@@ -34,6 +34,7 @@ export class JobDatabase {
             location TEXT NOT NULL,
             experience TEXT NOT NULL,
             salary TEXT,
+            posted_date TEXT,
             url TEXT NOT NULL,
             created_at TEXT NOT NULL
           );
@@ -46,6 +47,8 @@ export class JobDatabase {
             logger.error('Failed to initialize jobs table schema', execErr);
             return reject(execErr);
           }
+          // Migration check for pre-existing databases
+          this.db!.run('ALTER TABLE jobs ADD COLUMN posted_date TEXT', () => {});
           logger.info(`SQLite Job Database initialized at ${this.dbPath}`);
           resolve();
         });
@@ -128,8 +131,8 @@ export class JobDatabase {
     if (!this.db) return [];
     return new Promise((resolve, reject) => {
       const sql = limit
-        ? `SELECT id, source, title, company, location, experience, salary, url, created_at as createdAt FROM jobs ORDER BY created_at DESC LIMIT ?`
-        : `SELECT id, source, title, company, location, experience, salary, url, created_at as createdAt FROM jobs ORDER BY created_at DESC`;
+        ? `SELECT id, source, title, company, location, experience, salary, posted_date as postedDate, url, created_at as createdAt FROM jobs ORDER BY created_at DESC LIMIT ?`
+        : `SELECT id, source, title, company, location, experience, salary, posted_date as postedDate, url, created_at as createdAt FROM jobs ORDER BY created_at DESC`;
       const params = limit ? [limit] : [];
       this.db!.all(sql, params, (err, rows: any[]) => {
         if (err) return reject(err);
@@ -165,8 +168,8 @@ export class JobDatabase {
   private async insertJob(job: Job): Promise<void> {
     return new Promise((resolve, reject) => {
       const sql = `
-        INSERT INTO jobs (id, source, title, company, location, experience, salary, url, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO jobs (id, source, title, company, location, experience, salary, posted_date, url, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `;
       const params = [
         job.id,
@@ -176,6 +179,7 @@ export class JobDatabase {
         job.location,
         job.experience,
         job.salary || null,
+        job.postedDate || null,
         job.url,
         job.createdAt,
       ];

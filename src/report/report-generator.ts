@@ -2,14 +2,44 @@ import fs from 'fs';
 import path from 'path';
 import { Job } from '../models/job';
 import { logger } from '../utils/logger';
+import { ReportResult } from '../notification/models';
 
 export interface ReportOptions {
   generatedAt?: Date;
   title?: string;
   reportType?: 'new' | 'all';
+  keywords?: string[];
 }
 
 export class ReportGenerator {
+  /**
+   * Generates HTML report, writes to file, and returns structured ReportResult metadata.
+   */
+  public static generateAndSaveReport(
+    jobs: Job[],
+    options: ReportOptions & { prefixFilename?: string; outputDir?: string } = {}
+  ): ReportResult | null {
+    if (!jobs || jobs.length === 0) {
+      return null;
+    }
+
+    const generatedAt = options.generatedAt || new Date();
+    const html = this.generateReportHtml(jobs, { ...options, generatedAt });
+    const prefix = options.prefixFilename || (options.reportType === 'all' ? 'all-jobs-report' : 'jobs-report');
+    const filePath = this.saveReportToFile(html, prefix, options.outputDir);
+    const fileName = path.basename(filePath);
+    const sources = Array.from(new Set(jobs.map((j) => j.source || 'Naukri')));
+
+    return {
+      html,
+      filePath,
+      fileName,
+      jobCount: jobs.length,
+      sources,
+      keywords: options.keywords,
+      generatedAt,
+    };
+  }
   /**
    * Generates a complete standalone HTML document string from an array of jobs.
    * Provider-agnostic: relies ONLY on Job[].
@@ -40,11 +70,12 @@ export class ReportGenerator {
         const location = this.escapeHtml(job.location);
         const experience = this.escapeHtml(job.experience);
         const salary = job.salary ? this.escapeHtml(job.salary) : null;
+        const postedDate = job.postedDate ? this.escapeHtml(job.postedDate) : null;
         const source = this.escapeHtml(job.source || 'Naukri');
         const url = this.escapeHtml(job.url);
 
         return `
-        <div class="job-card" data-index="${index}" data-title="${title.toLowerCase()}" data-company="${company.toLowerCase()}" data-location="${location.toLowerCase()}">
+        <div class="job-card" data-index="${index}" data-title="${title.toLowerCase()}" data-company="${company.toLowerCase()}" data-location="${location.toLowerCase()}" data-posted="${postedDate ? postedDate.toLowerCase() : ''}">
           <h2 class="job-title">
             <a href="${url}" target="_blank" rel="noopener noreferrer">${title}</a>
           </h2>
@@ -54,6 +85,7 @@ export class ReportGenerator {
             <div class="detail-item">📍 <span>${location}</span></div>
             <div class="detail-item">💼 <span>${experience}</span></div>
             ${salary ? `<div class="detail-item">💰 <span>${salary}</span></div>` : ''}
+            ${postedDate ? `<div class="detail-item">📅 <span>${postedDate}</span></div>` : ''}
             <div class="detail-item"><span class="source-badge">${source}</span></div>
           </div>
 
@@ -366,6 +398,7 @@ export class ReportGenerator {
       <input type="text" id="searchInput" class="search-input" placeholder="Search by title, company, or location..." />
       <select id="sortSelect" class="sort-select">
         <option value="default">Sort: Default</option>
+        <option value="date">Sort by Date Posted</option>
         <option value="company">Sort by Company (A-Z)</option>
         <option value="title">Sort by Title (A-Z)</option>
       </select>
@@ -412,6 +445,12 @@ export class ReportGenerator {
           visibleCards.sort((a, b) => (a.getAttribute('data-company') || '').localeCompare(b.getAttribute('data-company') || ''));
         } else if (sortValue === 'title') {
           visibleCards.sort((a, b) => (a.getAttribute('data-title') || '').localeCompare(b.getAttribute('data-title') || ''));
+        } else if (sortValue === 'date') {
+          visibleCards.sort((a, b) => {
+            const pA = a.getAttribute('data-posted') || '';
+            const pB = b.getAttribute('data-posted') || '';
+            return pA.localeCompare(pB);
+          });
         } else {
           visibleCards.sort((a, b) => parseInt(a.getAttribute('data-index')) - parseInt(b.getAttribute('data-index')));
         }
