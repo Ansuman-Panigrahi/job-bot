@@ -74,6 +74,23 @@ export class GmailProvider implements NotificationProvider {
         </table>
       </div>
 
+      ${report.topMatches && report.topMatches.length > 0 ? `
+      <div style="margin: 20px 0;">
+        <h3 style="font-size: 15px; color: #24292f; margin-bottom: 10px; border-bottom: 1px solid #d0d7de; padding-bottom: 4px; font-weight: 600;">🎯 Top Matching Jobs</h3>
+        <ul style="list-style-type: none; padding-left: 0; margin: 0;">
+          ${report.topMatches.map(match => {
+            const color = match.score >= 80 ? '#2ecc71' : match.score >= 50 ? '#f39c12' : '#e74c3c';
+            return `
+            <li style="padding: 8px 0; border-bottom: 1px dashed #e1e4e8; font-size: 14px; list-style: none;">
+              <span style="background-color: ${color}; color: #ffffff; padding: 2px 8px; border-radius: 12px; font-weight: bold; font-size: 11px; margin-right: 8px; display: inline-block; min-width: 32px; text-align: center;">${match.score}%</span>
+              <span style="color: #24292f;">
+                <a href="${match.url}" style="color: #0969da; text-decoration: none; font-weight: 600;">${this.escapeHtml(match.title)}</a> at <strong>${this.escapeHtml(match.company)}</strong>
+              </span>
+            </li>`;
+          }).join('')}
+        </ul>
+      </div>` : ''}
+
       <p style="font-size: 14px; color: #57606a; margin-bottom: 24px;">
         The detailed HTML report (<code>${report.fileName}</code>) is attached to this email.
       </p>

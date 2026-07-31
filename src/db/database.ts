@@ -3,6 +3,7 @@ import path from 'path';
 import crypto from 'crypto';
 import sqlite3 from 'sqlite3';
 import { Job } from '../models/job';
+import { AIAnalysis, AnalyzedJob } from '../models/analysis';
 import { logger } from '../utils/logger';
 
 export class JobDatabase {
@@ -36,10 +37,20 @@ export class JobDatabase {
             salary TEXT,
             posted_date TEXT,
             url TEXT NOT NULL,
+            description TEXT,
             created_at TEXT NOT NULL
           );
           CREATE INDEX IF NOT EXISTS idx_jobs_source ON jobs(source);
           CREATE INDEX IF NOT EXISTS idx_jobs_created_at ON jobs(created_at);
+
+          CREATE TABLE IF NOT EXISTS job_analyses (
+            job_id TEXT PRIMARY KEY,
+            analysis_json TEXT NOT NULL,
+            analysis_version INTEGER NOT NULL,
+            prompt_version INTEGER NOT NULL,
+            analyzed_at TEXT NOT NULL,
+            FOREIGN KEY(job_id) REFERENCES jobs(id) ON DELETE CASCADE
+          );
         `;
 
         this.db!.exec(createTableSql, (execErr) => {
@@ -49,6 +60,7 @@ export class JobDatabase {
           }
           // Migration check for pre-existing databases
           this.db!.run('ALTER TABLE jobs ADD COLUMN posted_date TEXT', () => {});
+          this.db!.run('ALTER TABLE jobs ADD COLUMN description TEXT', () => {});
           logger.info(`SQLite Job Database initialized at ${this.dbPath}`);
           resolve();
         });
@@ -131,8 +143,8 @@ export class JobDatabase {
     if (!this.db) return [];
     return new Promise((resolve, reject) => {
       const sql = limit
-        ? `SELECT id, source, title, company, location, experience, salary, posted_date as postedDate, url, created_at as createdAt FROM jobs ORDER BY created_at DESC LIMIT ?`
-        : `SELECT id, source, title, company, location, experience, salary, posted_date as postedDate, url, created_at as createdAt FROM jobs ORDER BY created_at DESC`;
+        ? `SELECT id, source, title, company, location, experience, salary, posted_date as postedDate, url, description, created_at as createdAt FROM jobs ORDER BY created_at DESC LIMIT ?`
+        : `SELECT id, source, title, company, location, experience, salary, posted_date as postedDate, url, description, created_at as createdAt FROM jobs ORDER BY created_at DESC`;
       const params = limit ? [limit] : [];
       this.db!.all(sql, params, (err, rows: any[]) => {
         if (err) return reject(err);
@@ -168,8 +180,8 @@ export class JobDatabase {
   private async insertJob(job: Job): Promise<void> {
     return new Promise((resolve, reject) => {
       const sql = `
-        INSERT INTO jobs (id, source, title, company, location, experience, salary, posted_date, url, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO jobs (id, source, title, company, location, experience, salary, posted_date, url, description, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `;
       const params = [
         job.id,
@@ -181,12 +193,177 @@ export class JobDatabase {
         job.salary || null,
         job.postedDate || null,
         job.url,
+        job.description || null,
         job.createdAt,
       ];
 
       this.db!.run(sql, params, (err) => {
         if (err) return reject(err);
         resolve();
+      });
+    });
+  }
+
+  public async updateJobDescription(jobId: string, description: string): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized.');
+    return new Promise((resolve, reject) => {
+      const sql = `UPDATE jobs SET description = ? WHERE id = ?`;
+      this.db!.run(sql, [description, jobId], (err) => {
+        if (err) {
+          logger.error(`Failed to update job description for ID: ${jobId}`, err);
+          return reject(err);
+        }
+        resolve();
+      });
+    });
+  }
+
+  public async saveAnalysis(analysis: AIAnalysis): Promise<void> {
+    if (!this.db) {
+      throw new Error('Database not initialized.');
+    }
+
+    return new Promise((resolve, reject) => {
+      const sql = `
+        INSERT INTO job_analyses (job_id, analysis_json, analysis_version, prompt_version, analyzed_at)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(job_id) DO UPDATE SET
+          analysis_json = excluded.analysis_json,
+          analysis_version = excluded.analysis_version,
+          prompt_version = excluded.prompt_version,
+          analyzed_at = excluded.analyzed_at
+      `;
+
+      const analysisData = {
+        score: analysis.score,
+        recommendation: analysis.recommendation,
+        summary: analysis.summary,
+        strengths: analysis.strengths,
+        missingSkills: analysis.missingSkills,
+        reasons: analysis.reasons
+      };
+
+      const params = [
+        analysis.jobId,
+        JSON.stringify(analysisData),
+        analysis.analysisVersion,
+        analysis.promptVersion,
+        analysis.analyzedAt,
+      ];
+
+      this.db!.run(sql, params, (err) => {
+        if (err) {
+          logger.error(`Failed to save analysis for job ${analysis.jobId}`, err);
+          return reject(err);
+        }
+        resolve();
+      });
+    });
+  }
+
+  public async getAnalysisForJob(jobId: string): Promise<AIAnalysis | null> {
+    if (!this.db) return null;
+
+    return new Promise((resolve, reject) => {
+      const sql = `SELECT job_id, analysis_json, analysis_version, prompt_version, analyzed_at FROM job_analyses WHERE job_id = ?`;
+      this.db!.get(sql, [jobId], (err, row: any) => {
+        if (err) {
+          logger.error(`Failed to get analysis for job ${jobId}`, err);
+          return reject(err);
+        }
+        if (!row) return resolve(null);
+
+        try {
+          const data = JSON.parse(row.analysis_json);
+          resolve({
+            jobId: row.job_id,
+            score: data.score,
+            recommendation: data.recommendation,
+            summary: data.summary,
+            strengths: data.strengths || [],
+            missingSkills: data.missingSkills || [],
+            reasons: data.reasons || [],
+            analysisVersion: row.analysis_version,
+            promptVersion: row.prompt_version,
+            analyzedAt: row.analyzed_at,
+          });
+        } catch (parseErr) {
+          logger.error(`Failed to parse analysis JSON for job ${jobId}`, parseErr);
+          resolve(null);
+        }
+      });
+    });
+  }
+
+  public async getAllAnalyzedJobs(limit?: number): Promise<AnalyzedJob[]> {
+    if (!this.db) return [];
+
+    return new Promise((resolve, reject) => {
+      const sql = limit
+        ? `
+          SELECT 
+            j.id, j.source, j.title, j.company, j.location, j.experience, j.salary, j.posted_date as postedDate, j.url, j.created_at as createdAt,
+            a.analysis_json, a.analysis_version, a.prompt_version, a.analyzed_at
+          FROM jobs j
+          LEFT JOIN job_analyses a ON j.id = a.job_id
+          ORDER BY j.created_at DESC
+          LIMIT ?
+        `
+        : `
+          SELECT 
+            j.id, j.source, j.title, j.company, j.location, j.experience, j.salary, j.posted_date as postedDate, j.url, j.created_at as createdAt,
+            a.analysis_json, a.analysis_version, a.prompt_version, a.analyzed_at
+          FROM jobs j
+          LEFT JOIN job_analyses a ON j.id = a.job_id
+          ORDER BY j.created_at DESC
+        `;
+      const params = limit ? [limit] : [];
+
+      this.db!.all(sql, params, (err, rows: any[]) => {
+        if (err) {
+          logger.error('Failed to get all analyzed jobs', err);
+          return reject(err);
+        }
+
+        const results: AnalyzedJob[] = (rows || []).map((row) => {
+          const job: Job = {
+            id: row.id,
+            source: row.source,
+            title: row.title,
+            company: row.company,
+            location: row.location,
+            experience: row.experience,
+            salary: row.salary || undefined,
+            postedDate: row.postedDate || undefined,
+            url: row.url,
+            createdAt: row.createdAt,
+          };
+
+          let analysis: AIAnalysis | undefined;
+          if (row.analysis_json) {
+            try {
+              const data = JSON.parse(row.analysis_json);
+              analysis = {
+                jobId: row.id,
+                score: data.score,
+                recommendation: data.recommendation,
+                summary: data.summary,
+                strengths: data.strengths || [],
+                missingSkills: data.missingSkills || [],
+                reasons: data.reasons || [],
+                analysisVersion: row.analysis_version,
+                promptVersion: row.prompt_version,
+                analyzedAt: row.analyzed_at,
+              };
+            } catch (parseErr) {
+              logger.error(`Failed to parse analysis_json in getAllAnalyzedJobs for job ${row.id}`, parseErr);
+            }
+          }
+
+          return { job, analysis };
+        });
+
+        resolve(results);
       });
     });
   }

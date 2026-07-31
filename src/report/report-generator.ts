@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { Job } from '../models/job';
+import { AnalyzedJob } from '../models/analysis';
 import { logger } from '../utils/logger';
 import { ReportResult } from '../notification/models';
 
@@ -16,38 +17,50 @@ export class ReportGenerator {
    * Generates HTML report, writes to file, and returns structured ReportResult metadata.
    */
   public static generateAndSaveReport(
-    jobs: Job[],
+    analyzedJobs: AnalyzedJob[],
     options: ReportOptions & { prefixFilename?: string; outputDir?: string } = {}
   ): ReportResult | null {
-    if (!jobs || jobs.length === 0) {
+    if (!analyzedJobs || analyzedJobs.length === 0) {
       return null;
     }
 
     const generatedAt = options.generatedAt || new Date();
-    const html = this.generateReportHtml(jobs, { ...options, generatedAt });
+    const html = this.generateReportHtml(analyzedJobs, { ...options, generatedAt });
     const prefix = options.prefixFilename || (options.reportType === 'all' ? 'all-jobs-report' : 'jobs-report');
     const filePath = this.saveReportToFile(html, prefix, options.outputDir);
     const fileName = path.basename(filePath);
-    const sources = Array.from(new Set(jobs.map((j) => j.source || 'Naukri')));
+    const sources = Array.from(new Set(analyzedJobs.map((item) => item.job.source || 'Naukri')));
+
+    const topMatches = analyzedJobs
+      .filter((item) => item.analysis !== undefined && item.analysis.score > 0)
+      .map((item) => ({
+        title: item.job.title,
+        company: item.job.company,
+        score: item.analysis!.score,
+        url: item.job.url,
+      }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 3);
 
     return {
       html,
       filePath,
       fileName,
-      jobCount: jobs.length,
+      jobCount: analyzedJobs.length,
       sources,
       keywords: options.keywords,
       generatedAt,
+      topMatches: topMatches.length > 0 ? topMatches : undefined,
     };
   }
+
   /**
-   * Generates a complete standalone HTML document string from an array of jobs.
-   * Provider-agnostic: relies ONLY on Job[].
+   * Generates a complete standalone HTML document string from an array of analyzed jobs.
    */
-  public static generateReportHtml(jobs: Job[], options: ReportOptions = {}): string {
+  public static generateReportHtml(analyzedJobs: AnalyzedJob[], options: ReportOptions = {}): string {
     const generatedAt = options.generatedAt || new Date();
     const reportTitle = options.title || (options.reportType === 'all' ? 'All Stored Jobs' : 'New Jobs Found');
-    const badgeText = options.reportType === 'all' ? `${jobs.length} Total` : `${jobs.length} New`;
+    const badgeText = options.reportType === 'all' ? `${analyzedJobs.length} Total` : `${analyzedJobs.length} New`;
     const statusText = options.reportType === 'all' ? 'stored' : 'newly discovered';
 
     const formattedDate = generatedAt.toLocaleString('en-GB', {
@@ -60,11 +73,13 @@ export class ReportGenerator {
       hour12: false,
     });
 
-    const sources = Array.from(new Set(jobs.map((j) => j.source || 'Naukri'))).join(', ');
-    const safeJobsJson = JSON.stringify(jobs).replace(/</g, '\\u003c');
+    const sources = Array.from(new Set(analyzedJobs.map((item) => item.job.source || 'Naukri'))).join(', ');
 
-    const jobCardsHtml = jobs
-      .map((job, index) => {
+    const jobCardsHtml = analyzedJobs
+      .map((item, index) => {
+        const job = item.job;
+        const analysis = item.analysis;
+
         const title = this.escapeHtml(job.title);
         const company = this.escapeHtml(job.company);
         const location = this.escapeHtml(job.location);
@@ -74,8 +89,19 @@ export class ReportGenerator {
         const source = this.escapeHtml(job.source || 'Naukri');
         const url = this.escapeHtml(job.url);
 
+        const score = analysis ? analysis.score : null;
+        const recommendation = analysis ? analysis.recommendation : null;
+        const hasAnalysis = !!analysis;
+        const scoreClass = !hasAnalysis ? 'score-na' : score! >= 80 ? 'score-high' : score! >= 50 ? 'score-med' : 'score-low';
+
         return `
-        <div class="job-card" data-index="${index}" data-title="${title.toLowerCase()}" data-company="${company.toLowerCase()}" data-location="${location.toLowerCase()}" data-posted="${postedDate ? postedDate.toLowerCase() : ''}">
+        <div class="job-card" 
+             data-index="${index}" 
+             data-title="${title.toLowerCase()}" 
+             data-company="${company.toLowerCase()}" 
+             data-location="${location.toLowerCase()}" 
+             data-posted="${postedDate ? postedDate.toLowerCase() : ''}"
+             data-score="${score !== null ? score : -1}">
           <h2 class="job-title">
             <a href="${url}" target="_blank" rel="noopener noreferrer">${title}</a>
           </h2>
@@ -89,9 +115,51 @@ export class ReportGenerator {
             <div class="detail-item"><span class="source-badge">${source}</span></div>
           </div>
 
-          <div class="ai-score-slot">
-            <span class="ai-icon">🤖</span> Match Score: <span class="score-badge-placeholder">Coming Soon</span>
+          <div class="ai-analysis-container">
+            ${hasAnalysis ? `
+            <details class="ai-details-toggle">
+              <summary class="ai-score-row">
+                <span class="ai-icon">🤖</span> AI Fit Match: 
+                <span class="score-badge ${scoreClass}">${score}% (${recommendation})</span>
+                <span class="toggle-icon">▼</span>
+              </summary>
+              <div class="ai-details">
+                <p class="ai-summary"><strong>Summary:</strong> ${this.escapeHtml(analysis!.summary)}</p>
+                ${analysis!.strengths && analysis!.strengths.length > 0 ? `
+                <div class="ai-lists">
+                  <div class="ai-list-title align-green">✓ Strengths</div>
+                  <ul class="ai-ul">
+                    ${analysis!.strengths.map(s => `<li>${this.escapeHtml(s)}</li>`).join('')}
+                  </ul>
+                </div>` : ''}
+                ${analysis!.missingSkills && analysis!.missingSkills.length > 0 ? `
+                <div class="ai-lists">
+                  <div class="ai-list-title align-red">✗ Skill Gaps</div>
+                  <ul class="ai-ul">
+                    ${analysis!.missingSkills.map(s => `<li>${this.escapeHtml(s)}</li>`).join('')}
+                  </ul>
+                </div>` : ''}
+              </div>
+            </details>
+            ` : `
+            <div class="ai-score-row">
+              <span class="ai-icon">🤖</span> AI Fit Match: 
+              <span class="score-badge ${scoreClass}">Not Evaluated</span>
+            </div>
+            `}
           </div>
+
+          ${job.description ? `
+          <div class="jd-container">
+            <details class="jd-details-toggle">
+              <summary class="jd-row-title">
+                📋 Detailed Job Description
+                <span class="toggle-icon">▼</span>
+              </summary>
+              <div class="jd-text-content">${this.escapeHtml(job.description)}</div>
+            </details>
+          </div>
+          ` : ''}
 
           <div class="card-action">
             <a href="${url}" target="_blank" rel="noopener noreferrer" class="btn-open-job">Open Job ↗</a>
@@ -105,7 +173,7 @@ export class ReportGenerator {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>New Jobs Found - ${formattedDate}</title>
+  <title>${reportTitle} - ${formattedDate}</title>
   <style>
     :root {
       --bg-color: #0d1117;
@@ -189,7 +257,7 @@ export class ReportGenerator {
     }
 
     .meta-value {
-      color: var(--text-heading);
+      color: var(--text-main);
       font-weight: 500;
       margin-top: 2px;
     }
@@ -197,41 +265,46 @@ export class ReportGenerator {
     .controls-bar {
       display: flex;
       gap: 12px;
-      margin-bottom: 20px;
+      margin-bottom: 16px;
       flex-wrap: wrap;
     }
 
     .search-input {
       flex: 1;
-      min-width: 220px;
-      background: var(--card-bg);
+      min-width: 200px;
+      background-color: var(--card-bg);
       border: 1px solid var(--border-color);
       border-radius: 6px;
-      padding: 10px 14px;
+      padding: 8px 12px;
       color: var(--text-main);
       font-size: 14px;
-      outline: none;
     }
 
     .search-input:focus {
+      outline: none;
       border-color: var(--accent-color);
     }
 
     .sort-select {
-      background: var(--card-bg);
+      background-color: var(--card-bg);
       border: 1px solid var(--border-color);
       border-radius: 6px;
-      padding: 10px 14px;
+      padding: 8px 12px;
       color: var(--text-main);
       font-size: 14px;
-      outline: none;
       cursor: pointer;
+    }
+
+    .sort-select:focus {
+      outline: none;
+      border-color: var(--accent-color);
     }
 
     .status-summary {
       font-size: 13px;
       color: var(--text-muted);
-      margin-bottom: 16px;
+      margin-bottom: 14px;
+      padding-left: 4px;
     }
 
     .jobs-grid {
@@ -244,7 +317,7 @@ export class ReportGenerator {
       background: var(--card-bg);
       border: 1px solid var(--border-color);
       border-radius: 8px;
-      padding: 18px;
+      padding: 20px;
       transition: border-color 0.2s ease;
     }
 
@@ -299,25 +372,197 @@ export class ReportGenerator {
       text-transform: uppercase;
     }
 
-    .ai-score-slot {
+    .ai-analysis-container {
       background: #1c2128;
-      border: 1px dashed var(--border-color);
+      border: 1px solid var(--border-color);
       border-radius: 6px;
-      padding: 8px 12px;
-      font-size: 12px;
-      color: var(--text-muted);
+      padding: 12px;
       margin-bottom: 14px;
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
+      font-size: 13px;
     }
 
-    .score-badge-placeholder {
-      background: #2d333b;
-      color: #adbac7;
-      padding: 2px 6px;
-      border-radius: 4px;
+    .jd-container {
+      background: #1c2128;
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 12px;
+      margin-bottom: 14px;
+      font-size: 13px;
+    }
+
+    .jd-details-toggle {
+      width: 100%;
+    }
+
+    .jd-details-toggle summary {
+      list-style: none;
+      outline: none;
+      cursor: pointer;
+    }
+
+    .jd-details-toggle summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .jd-row-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 600;
+      color: var(--text-heading);
+      margin-bottom: 0;
+    }
+
+    .jd-details-toggle[open] .jd-row-title {
+      margin-bottom: 8px;
+    }
+
+    .jd-details-toggle .toggle-icon {
+      margin-left: auto;
+      font-size: 10px;
+      color: var(--text-muted);
+      transition: transform 0.2s ease;
+    }
+
+    .jd-details-toggle[open] .toggle-icon {
+      transform: rotate(180deg);
+    }
+
+    .jd-text-content {
+      border-top: 1px solid var(--border-color);
+      padding-top: 8px;
+      margin-top: 8px;
+      color: var(--text-muted);
+      white-space: pre-wrap;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      line-height: 1.5;
+      max-height: 250px;
+      overflow-y: auto;
+    }
+
+    .ai-details-toggle {
+      width: 100%;
+    }
+
+    .ai-details-toggle summary {
+      list-style: none;
+      outline: none;
+      cursor: pointer;
+    }
+
+    .ai-details-toggle summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .ai-score-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 600;
+      color: var(--text-heading);
+      margin-bottom: 0;
+    }
+
+    .ai-details-toggle[open] .ai-score-row {
+      margin-bottom: 8px;
+    }
+
+    .ai-details-toggle .toggle-icon {
+      margin-left: auto;
+      font-size: 10px;
+      color: var(--text-muted);
+      transition: transform 0.2s ease;
+    }
+
+    .ai-details-toggle[open] .toggle-icon {
+      transform: rotate(180deg);
+    }
+
+    .score-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 3px 10px;
+      border-radius: 12px;
+      font-weight: 700;
+      font-size: 12px;
+    }
+
+    .score-high {
+      background-color: rgba(46, 204, 113, 0.15);
+      color: #2ecc71;
+      border: 1px solid rgba(46, 204, 113, 0.3);
+    }
+
+    .score-med {
+      background-color: rgba(243, 156, 18, 0.15);
+      color: #f39c12;
+      border: 1px solid rgba(243, 156, 18, 0.3);
+    }
+
+    .score-low {
+      background-color: rgba(231, 76, 60, 0.15);
+      color: #e74c3c;
+      border: 1px solid rgba(231, 76, 60, 0.3);
+    }
+
+    .score-na {
+      background-color: rgba(137, 140, 141, 0.15);
+      color: #8b949e;
+      border: 1px solid rgba(137, 140, 141, 0.3);
+    }
+
+    .ai-details {
+      border-top: 1px solid var(--border-color);
+      padding-top: 8px;
+      margin-top: 8px;
+    }
+
+    .ai-summary {
+      color: var(--text-main);
+      margin-bottom: 10px;
+      line-height: 1.4;
+    }
+
+    .ai-lists {
+      margin-top: 8px;
+    }
+
+    .ai-list-title {
       font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 4px;
+    }
+
+    .align-green {
+      color: #2ecc71;
+    }
+
+    .align-red {
+      color: #e74c3c;
+    }
+
+    .ai-ul {
+      list-style-type: none;
+      padding-left: 0;
+    }
+
+    .ai-ul li {
+      position: relative;
+      padding-left: 14px;
+      margin-bottom: 3px;
+      color: var(--text-muted);
+      font-size: 12px;
+      line-height: 1.3;
+    }
+
+    .ai-ul li::before {
+      content: "•";
+      position: absolute;
+      left: 3px;
+      color: var(--text-muted);
     }
 
     .card-action {
@@ -389,23 +634,33 @@ export class ReportGenerator {
         </div>
         <div>
           <div class="meta-label">Total Jobs</div>
-          <div class="meta-value">${jobs.length} Jobs</div>
+          <div class="meta-value">${analyzedJobs.length} Jobs</div>
         </div>
       </div>
     </header>
 
     <div class="controls-bar">
       <input type="text" id="searchInput" class="search-input" placeholder="Search by title, company, or location..." />
+      
+      <select id="scoreFilterSelect" class="sort-select">
+        <option value="all">Filter: All Scores</option>
+        <option value="high">Score >= 80% (Apply)</option>
+        <option value="med">Score >= 50% (Review)</option>
+        <option value="low">Score < 50% (Skip)</option>
+        <option value="unevaluated">Not Evaluated</option>
+      </select>
+
       <select id="sortSelect" class="sort-select">
         <option value="default">Sort: Default</option>
-        <option value="date">Sort by Date Posted</option>
-        <option value="company">Sort by Company (A-Z)</option>
-        <option value="title">Sort by Title (A-Z)</option>
+        <option value="score">Sort: Match Score (High to Low)</option>
+        <option value="date">Sort: Date Posted</option>
+        <option value="company">Sort: Company (A-Z)</option>
+        <option value="title">Sort: Title (A-Z)</option>
       </select>
     </div>
 
     <div class="status-summary" id="statusSummary">
-      Showing ${jobs.length} of ${jobs.length} ${statusText} jobs
+      Showing ${analyzedJobs.length} of ${analyzedJobs.length} ${statusText} jobs
     </div>
 
     <div class="jobs-grid" id="jobsGrid">
@@ -421,6 +676,7 @@ export class ReportGenerator {
     (function() {
       const searchInput = document.getElementById('searchInput');
       const sortSelect = document.getElementById('sortSelect');
+      const scoreFilterSelect = document.getElementById('scoreFilterSelect');
       const jobsGrid = document.getElementById('jobsGrid');
       const noResults = document.getElementById('noResults');
       const statusSummary = document.getElementById('statusSummary');
@@ -431,16 +687,35 @@ export class ReportGenerator {
       function filterAndSort() {
         const query = searchInput.value.trim().toLowerCase();
         const sortValue = sortSelect.value;
+        const scoreFilterValue = scoreFilterSelect.value;
 
         let visibleCards = cards.filter(card => {
+          // 1. Search Query Filter
           const title = card.getAttribute('data-title') || '';
           const company = card.getAttribute('data-company') || '';
           const location = card.getAttribute('data-location') || '';
-          const matches = title.includes(query) || company.includes(query) || location.includes(query);
+          const matchesSearch = title.includes(query) || company.includes(query) || location.includes(query);
+
+          // 2. Score Filter
+          const score = parseInt(card.getAttribute('data-score') || '-1', 10);
+          let matchesScore = true;
+          
+          if (scoreFilterValue === 'high') {
+            matchesScore = (score >= 80);
+          } else if (scoreFilterValue === 'med') {
+            matchesScore = (score >= 50);
+          } else if (scoreFilterValue === 'low') {
+            matchesScore = (score >= 0 && score < 50);
+          } else if (scoreFilterValue === 'unevaluated') {
+            matchesScore = (score === -1);
+          }
+
+          const matches = matchesSearch && matchesScore;
           card.style.display = matches ? 'block' : 'none';
           return matches;
         });
 
+        // 3. Sorting logic
         if (sortValue === 'company') {
           visibleCards.sort((a, b) => (a.getAttribute('data-company') || '').localeCompare(b.getAttribute('data-company') || ''));
         } else if (sortValue === 'title') {
@@ -451,18 +726,25 @@ export class ReportGenerator {
             const pB = b.getAttribute('data-posted') || '';
             return pA.localeCompare(pB);
           });
+        } else if (sortValue === 'score') {
+          visibleCards.sort((a, b) => {
+            const sA = parseInt(a.getAttribute('data-score') || '-1', 10);
+            const sB = parseInt(b.getAttribute('data-score') || '-1', 10);
+            return sB - sA; // High to low
+          });
         } else {
           visibleCards.sort((a, b) => parseInt(a.getAttribute('data-index')) - parseInt(b.getAttribute('data-index')));
         }
 
         visibleCards.forEach(card => jobsGrid.appendChild(card));
 
-        statusSummary.textContent = 'Showing ' + visibleCards.length + ' of ' + totalCount + ' newly discovered jobs';
+        statusSummary.textContent = 'Showing ' + visibleCards.length + ' of ' + totalCount + ' ${statusText} jobs';
         noResults.style.display = visibleCards.length === 0 ? 'block' : 'none';
       }
 
       searchInput.addEventListener('input', filterAndSort);
       sortSelect.addEventListener('change', filterAndSort);
+      scoreFilterSelect.addEventListener('change', filterAndSort);
     })();
   </script>
 </body>
@@ -471,7 +753,6 @@ export class ReportGenerator {
 
   /**
    * Saves the HTML content string to a file in the reports/ directory.
-   * Output filename format: jobs-report-YYYY-MM-DD-HH-mm-ss.html
    */
   public static saveReportToFile(htmlContent: string, prefixFilename: string = 'jobs-report', outputDir?: string): string {
     const targetDir = outputDir || path.resolve(process.cwd(), 'reports');

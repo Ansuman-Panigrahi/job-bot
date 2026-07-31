@@ -9,4 +9,5 @@ export interface Job {
   url: string;
   source: string;
   createdAt?: string;
+  description?: string;
 }

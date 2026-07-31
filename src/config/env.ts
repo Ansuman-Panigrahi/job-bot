@@ -19,4 +19,7 @@ export const config = {
   gmailUser: process.env.GMAIL_USER || '',
   gmailAppPassword: process.env.GMAIL_APP_PASSWORD || '',
   postedDaysLimit: Number(process.env.POSTED_DAYS_LIMIT) || 0,
+  geminiApiKey: process.env.GEMINI_API_KEY || '',
+  aiEnabled: process.env.AI_ENABLED === 'true',
+  resumePath: process.env.RESUME_PATH || 'data/resume.txt',
 };

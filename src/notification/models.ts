@@ -6,6 +6,12 @@ export interface ReportResult {
   sources: string[];
   keywords?: string[];
   generatedAt: Date;
+  topMatches?: {
+    title: string;
+    company: string;
+    score: number;
+    url: string;
+  }[];
 }
 
 export interface NotificationProvider {

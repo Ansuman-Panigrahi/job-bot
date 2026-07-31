@@ -29,6 +29,9 @@ export class NaukriProvider {
 
       let cardSelector = await this.determineJobCardSelector();
 
+      // Wait up to 5s for cards to appear before checking access/element counts
+      await this.page.waitForSelector(cardSelector, { state: 'visible', timeout: 5000 }).catch(() => {});
+
       const isAccessDenied = (await this.page.title().catch(() => '')).toLowerCase().includes('access denied');
       if (isAccessDenied || (await this.page.locator(cardSelector).count().catch(() => 0)) === 0) {
         logger.info('Direct search URL encountered restriction. Falling back to homepage form search...');
@@ -97,8 +100,15 @@ export class NaukriProvider {
     }
 
     const queryParams: string[] = [];
+    queryParams.push(`k=${encodeURIComponent(this.keywords.trim().toLowerCase())}`);
+    if (this.location) {
+      queryParams.push(`l=${encodeURIComponent(this.location.trim().toLowerCase())}`);
+    }
     if (this.experience) {
-      queryParams.push(`experience=${encodeURIComponent(this.experience)}`);
+      queryParams.push(`experience=${encodeURIComponent(this.experience.trim())}`);
+    }
+    if (config.postedDaysLimit > 0) {
+      queryParams.push(`jobAge=${config.postedDaysLimit}`);
     }
 
     const queryString = queryParams.length > 0 ? `?${queryParams.join('&')}` : '';
@@ -206,9 +216,13 @@ export class NaukriProvider {
 
       if (await expInput.isVisible().catch(() => false)) {
         await expInput.click().catch(() => {});
-        const expOption = this.page.getByText(new RegExp(`${this.experience} Yrs|${this.experience} years`, 'i')).first();
-        if (await expOption.isVisible().catch(() => false)) {
-          await expOption.click().catch(() => {});
+        const expOption = this.page.getByText(new RegExp(`^${this.experience}\\s*(Yrs|years|Yr|year)$`, 'i')).first();
+        try {
+          await expOption.waitFor({ state: 'visible', timeout: 4000 });
+          await expOption.click({ force: true });
+          logger.info(`Successfully selected experience "${this.experience} Yrs" in form.`);
+        } catch (err: any) {
+          logger.warn(`Could not select experience option in form dropdown: ${err.message}`);
         }
       }
     }
@@ -306,6 +320,14 @@ export class NaukriProvider {
         continue;
       }
 
+      if (raw.experience && this.experience) {
+        if (!this.matchesExperienceLimit(raw.experience)) {
+          logger.info(`Skipped card #${index} ("${raw.title}"): Job requires "${raw.experience}" experience, but search limit is "${this.experience} Yrs".`);
+          skippedCount++;
+          continue;
+        }
+      }
+
       if (raw.postedDate && config.postedDaysLimit > 0) {
         const parsedDate = parsePostedDate(raw.postedDate);
         if (parsedDate && !isFresh(parsedDate, config.postedDaysLimit)) {
@@ -394,5 +416,23 @@ export class NaukriProvider {
     logger.info(`Saved debug screenshot to ${screenshotPath}`);
 
     throw new BrowserError('No job cards found after dismissing popups.');
+  }
+
+  private matchesExperienceLimit(jobExpStr: string): boolean {
+    if (!this.experience) return true;
+
+    const limit = parseFloat(this.experience);
+    if (isNaN(limit)) return true;
+
+    // Parse typical formats: "3-8 Yrs", "2-5 Yrs", "6 Yrs", "0-1 Yr", "3-5 Yrs"
+    const match = jobExpStr.match(/(\d+)\s*-\s*(\d+)/) || jobExpStr.match(/(\d+)/);
+    if (match) {
+      const minExp = parseFloat(match[1]);
+      // Allows up to 1 year over the limit (e.g. limit=2 allows up to 3 years min requirement)
+      if (!isNaN(minExp) && minExp > (limit + 1)) {
+        return false;
+      }
+    }
+    return true;
   }
 }
