@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>New Jobs Found - 31 Jul 2026, 14:28:59</title>
+  <style>
+    :root {
+      --bg-color: #0d1117;
+      --card-bg: #161b22;
+      --border-color: #30363d;
+      --text-main: #c9d1d9;
+      --text-muted: #8b949e;
+      --text-heading: #f0f6fc;
+      --accent-color: #2f81f7;
+      --accent-hover: #58a6ff;
+      --badge-bg: #21262d;
+      --badge-text: #79c0ff;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      line-height: 1.5;
+      padding: 20px 16px 40px 16px;
+    }
+
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+    }
+
+    header {
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+
+    .header-title-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    h1 {
+      font-size: 22px;
+      font-weight: 600;
+      color: var(--text-heading);
+    }
+
+    .job-count-pill {
+      background-color: var(--accent-color);
+      color: #ffffff;
+      font-size: 13px;
+      font-weight: 600;
+      padding: 4px 12px;
+      border-radius: 12px;
+    }
+
+    .metadata-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+      font-size: 13px;
+      color: var(--text-muted);
+      border-top: 1px solid var(--border-color);
+      padding-top: 12px;
+    }
+
+    .meta-label {
+      color: var(--text-muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .meta-value {
+      color: var(--text-heading);
+      font-weight: 500;
+      margin-top: 2px;
+    }
+
+    .controls-bar {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+
+    .search-input {
+      flex: 1;
+      min-width: 220px;
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 10px 14px;
+      color: var(--text-main);
+      font-size: 14px;
+      outline: none;
+    }
+
+    .search-input:focus {
+      border-color: var(--accent-color);
+    }
+
+    .sort-select {
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 10px 14px;
+      color: var(--text-main);
+      font-size: 14px;
+      outline: none;
+      cursor: pointer;
+    }
+
+    .status-summary {
+      font-size: 13px;
+      color: var(--text-muted);
+      margin-bottom: 16px;
+    }
+
+    .jobs-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .job-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 18px;
+      transition: border-color 0.2s ease;
+    }
+
+    .job-card:hover {
+      border-color: var(--text-muted);
+    }
+
+    .job-title {
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .job-title a {
+      color: var(--accent-hover);
+      text-decoration: none;
+    }
+
+    .job-title a:hover {
+      text-decoration: underline;
+    }
+
+    .job-company {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text-heading);
+      margin-bottom: 12px;
+    }
+
+    .job-details {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      font-size: 13px;
+      color: var(--text-muted);
+      margin-bottom: 12px;
+    }
+
+    .detail-item {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .source-badge {
+      background: var(--badge-bg);
+      color: var(--badge-text);
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 4px;
+      text-transform: uppercase;
+    }
+
+    .ai-score-slot {
+      background: #1c2128;
+      border: 1px dashed var(--border-color);
+      border-radius: 6px;
+      padding: 8px 12px;
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-bottom: 14px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .score-badge-placeholder {
+      background: #2d333b;
+      color: #adbac7;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 11px;
+    }
+
+    .card-action {
+      display: flex;
+      justify-content: flex-end;
+    }
+
+    .btn-open-job {
+      background-color: var(--accent-color);
+      color: #ffffff;
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 600;
+      padding: 8px 16px;
+      border-radius: 6px;
+      display: inline-block;
+      transition: background-color 0.2s ease;
+    }
+
+    .btn-open-job:hover {
+      background-color: var(--accent-hover);
+    }
+
+    .no-results {
+      text-align: center;
+      padding: 40px 20px;
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      color: var(--text-muted);
+      display: none;
+    }
+
+    @media (max-width: 600px) {
+      body {
+        padding: 12px 10px 30px 10px;
+      }
+      header, .job-card {
+        padding: 14px;
+      }
+      h1 {
+        font-size: 18px;
+      }
+      .job-title {
+        font-size: 16px;
+      }
+      .controls-bar {
+        flex-direction: column;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="header-title-row">
+        <h1>New Jobs Found</h1>
+        <span class="job-count-pill" id="totalBadge">2 New</span>
+      </div>
+
+      <div class="metadata-grid">
+        <div>
+          <div class="meta-label">Generated At</div>
+          <div class="meta-value">31 Jul 2026, 14:28:59</div>
+        </div>
+        <div>
+          <div class="meta-label">Search Sources</div>
+          <div class="meta-value">naukri</div>
+        </div>
+        <div>
+          <div class="meta-label">Total Discovered</div>
+          <div class="meta-value">2 Jobs</div>
+        </div>
+      </div>
+    </header>
+
+    <div class="controls-bar">
+      <input type="text" id="searchInput" class="search-input" placeholder="Search by title, company, or location..." />
+      <select id="sortSelect" class="sort-select">
+        <option value="default">Sort: Default</option>
+        <option value="company">Sort by Company (A-Z)</option>
+        <option value="title">Sort by Title (A-Z)</option>
+      </select>
+    </div>
+
+    <div class="status-summary" id="statusSummary">
+      Showing 2 of 2 newly discovered jobs
+    </div>
+
+    <div class="jobs-grid" id="jobsGrid">
+      
+        <div class="job-card" data-index="0" data-title="full stack developer (frontend/angular &amp; python)" data-company="millennium consulting" data-location="bengaluru">
+          <h2 class="job-title">
+            <a href="https://www.naukri.com/job-listings-full-stack-developer-frontend-angular-python-millennium-consulting-india-private-limited-bengaluru-3-to-7-years-290726919508" target="_blank" rel="noopener noreferrer">Full Stack Developer (Frontend/Angular &amp; Python)</a>
+          </h2>
+          <div class="job-company">Millennium Consulting</div>
+          
+          <div class="job-details">
+            <div class="detail-item">📍 <span>Bengaluru</span></div>
+            <div class="detail-item">💼 <span>3-7 Yrs</span></div>
+            
+            <div class="detail-item"><span class="source-badge">naukri</span></div>
+          </div>
+
+          <div class="ai-score-slot">
+            <span class="ai-icon">🤖</span> Match Score: <span class="score-badge-placeholder">Coming Soon</span>
+          </div>
+
+          <div class="card-action">
+            <a href="https://www.naukri.com/job-listings-full-stack-developer-frontend-angular-python-millennium-consulting-india-private-limited-bengaluru-3-to-7-years-290726919508" target="_blank" rel="noopener noreferrer" class="btn-open-job">Open Job ↗</a>
+          </div>
+        </div>
+
+        <div class="job-card" data-index="1" data-title="java full stack developer with angular" data-company="zensar" data-location="hybrid - bengaluru, hyderabad, pune">
+          <h2 class="job-title">
+            <a href="https://www.naukri.com/job-listings-java-full-stack-developer-with-angular-zensar-hyderabad-pune-bengaluru-6-to-10-years-240726016378" target="_blank" rel="noopener noreferrer">Java Full Stack Developer with Angular</a>
+          </h2>
+          <div class="job-company">Zensar</div>
+          
+          <div class="job-details">
+            <div class="detail-item">📍 <span>Hybrid - Bengaluru, Hyderabad, Pune</span></div>
+            <div class="detail-item">💼 <span>6-10 Yrs</span></div>
+            <div class="detail-item">💰 <span>12-22 Lacs PA</span></div>
+            <div class="detail-item"><span class="source-badge">naukri</span></div>
+          </div>
+
+          <div class="ai-score-slot">
+            <span class="ai-icon">🤖</span> Match Score: <span class="score-badge-placeholder">Coming Soon</span>
+          </div>
+
+          <div class="card-action">
+            <a href="https://www.naukri.com/job-listings-java-full-stack-developer-with-angular-zensar-hyderabad-pune-bengaluru-6-to-10-years-240726016378" target="_blank" rel="noopener noreferrer" class="btn-open-job">Open Job ↗</a>
+          </div>
+        </div>
+    </div>
+
+    <div class="no-results" id="noResults">
+      No jobs match your filter criteria.
+    </div>
+  </div>
+
+  <script>
+    (function() {
+      const searchInput = document.getElementById('searchInput');
+      const sortSelect = document.getElementById('sortSelect');
+      const jobsGrid = document.getElementById('jobsGrid');
+      const noResults = document.getElementById('noResults');
+      const statusSummary = document.getElementById('statusSummary');
+
+      let cards = Array.from(jobsGrid.getElementsByClassName('job-card'));
+      const totalCount = cards.length;
+
+      function filterAndSort() {
+        const query = searchInput.value.trim().toLowerCase();
+        const sortValue = sortSelect.value;
+
+        let visibleCards = cards.filter(card => {
+          const title = card.getAttribute('data-title') || '';
+          const company = card.getAttribute('data-company') || '';
+          const location = card.getAttribute('data-location') || '';
+          const matches = title.includes(query) || company.includes(query) || location.includes(query);
+          card.style.display = matches ? 'block' : 'none';
+          return matches;
+        });
+
+        if (sortValue === 'company') {
+          visibleCards.sort((a, b) => (a.getAttribute('data-company') || '').localeCompare(b.getAttribute('data-company') || ''));
+        } else if (sortValue === 'title') {
+          visibleCards.sort((a, b) => (a.getAttribute('data-title') || '').localeCompare(b.getAttribute('data-title') || ''));
+        } else {
+          visibleCards.sort((a, b) => parseInt(a.getAttribute('data-index')) - parseInt(b.getAttribute('data-index')));
+        }
+
+        visibleCards.forEach(card => jobsGrid.appendChild(card));
+
+        statusSummary.textContent = 'Showing ' + visibleCards.length + ' of ' + totalCount + ' newly discovered jobs';
+        noResults.style.display = visibleCards.length === 0 ? 'block' : 'none';
+      }
+
+      searchInput.addEventListener('input', filterAndSort);
+      sortSelect.addEventListener('change', filterAndSort);
+    })();
+  </script>
+</body>
+</html>

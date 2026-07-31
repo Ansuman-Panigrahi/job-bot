@@ -12,8 +12,8 @@ export class NaukriProvider {
   private readonly experience: string;
   private readonly maxResults: number;
 
-  constructor(private page: Page) {
-    this.keywords = config.searchKeywords;
+  constructor(private page: Page, keywordsOverride?: string) {
+    this.keywords = keywordsOverride || (Array.isArray(config.searchKeywords) ? config.searchKeywords[0] || 'Angular Developer' : config.searchKeywords);
     this.location = config.searchLocation;
     this.experience = config.searchExperience;
     this.maxResults = config.maxResults;
@@ -21,25 +21,28 @@ export class NaukriProvider {
 
   public async collectJobs(): Promise<Job[]> {
     try {
-      logger.info('Navigating to Naukri homepage...');
-      await this.page.goto('https://www.naukri.com', { waitUntil: 'domcontentloaded' });
-
-      // Dismiss popups on homepage
+      const searchUrl = this.buildSearchUrl();
+      logger.info(`Navigating directly to Naukri search for "${this.keywords}": ${searchUrl}`);
+      await this.page.goto(searchUrl, { waitUntil: 'domcontentloaded', referer: 'https://www.naukri.com/' });
       await this.dismissPopups(this.page);
 
-      // Perform search via UI
-      await this.performSearch();
+      let cardSelector = await this.determineJobCardSelector();
 
-      // Dedicated popup handling after search results page loads
-      logger.info('Search results loaded. Running dedicated popup dismissal...');
-      await this.dismissPopups(this.page);
+      const isAccessDenied = (await this.page.title().catch(() => '')).toLowerCase().includes('access denied');
+      if (isAccessDenied || (await this.page.locator(cardSelector).count().catch(() => 0)) === 0) {
+        logger.info('Direct search URL encountered restriction. Falling back to homepage form search...');
+        await this.page.goto('https://www.naukri.com', { waitUntil: 'domcontentloaded' });
+        await this.page.waitForTimeout(1000);
+        await this.dismissPopups(this.page);
+        await this.performSearch();
+        await this.dismissPopups(this.page);
+        cardSelector = await this.determineJobCardSelector();
+      }
 
-      // Determine top-level card selector dynamically
-      const cardSelector = await this.determineJobCardSelector();
       logger.info(`Waiting for job cards matching selector ("${cardSelector}")...`);
 
       try {
-        await this.page.waitForSelector(cardSelector, { state: 'visible', timeout: 10000 });
+        await this.page.waitForSelector(cardSelector, { state: 'visible', timeout: 15000 });
       } catch {
         await this.handleNoJobCardsFound(cardSelector);
       }
@@ -81,6 +84,24 @@ export class NaukriProvider {
       logger.error(`Naukri job collection failed: ${message}`);
       throw err instanceof BrowserError ? err : new BrowserError(`Naukri job collection failed: ${message}`);
     }
+  }
+
+  private buildSearchUrl(): string {
+    const formattedKeywords = this.keywords.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    const formattedLocation = this.location.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-');
+
+    let pathPart = `${formattedKeywords}-jobs`;
+    if (formattedLocation) {
+      pathPart += `-in-${formattedLocation}`;
+    }
+
+    const queryParams: string[] = [];
+    if (this.experience) {
+      queryParams.push(`experience=${encodeURIComponent(this.experience)}`);
+    }
+
+    const queryString = queryParams.length > 0 ? `?${queryParams.join('&')}` : '';
+    return `https://www.naukri.com/${pathPart}${queryString}`;
   }
 
   private async determineJobCardSelector(): Promise<string> {
@@ -146,21 +167,32 @@ export class NaukriProvider {
   private async performSearch(): Promise<void> {
     logger.info(`Filling search form (Keywords: "${this.keywords}", Location: "${this.location}", Exp: "${this.experience} yrs")...`);
 
-    const keywordInput = this.page
-      .getByPlaceholder(/search keyword|skills|designations|companies/i)
-      .or(this.page.locator('input.sugInp'))
-      .first();
+    const keywordSelector = 'input.sugInp, input.nI-gI-sb__input, input[placeholder*="Keyword" i], input[placeholder*="skills" i], input[placeholder*="designation" i], .keyword-sug input';
+    const keywordInput = this.page.locator(keywordSelector).first();
 
-    await keywordInput.waitFor({ state: 'visible', timeout: 10000 });
-    await keywordInput.fill(this.keywords);
+    try {
+      await keywordInput.waitFor({ state: 'visible', timeout: 8000 });
+      await keywordInput.click();
+      await keywordInput.fill('');
+      await keywordInput.fill(this.keywords);
+    } catch {
+      logger.info('Waiting for input placeholder container...');
+      const placeholder = this.page.locator('.nI-gI-sb__keywords, .keyword-sug, .qsb-keyword-sug, div[class*="keyword"]').first();
+      if (await placeholder.isVisible({ timeout: 5000 }).catch(() => false)) {
+        await placeholder.click().catch(() => {});
+        await keywordInput.fill('');
+        await keywordInput.fill(this.keywords).catch(() => {});
+      }
+    }
 
     if (this.location) {
       const locationInput = this.page
         .getByPlaceholder(/enter location|location/i)
-        .or(this.page.locator('input[placeholder*="location" i]'))
+        .or(this.page.locator('input[placeholder*="location" i], .nI-gI-sb__location input'))
         .first();
 
       if (await locationInput.isVisible().catch(() => false)) {
+        await locationInput.fill('');
         await locationInput.fill(this.location);
       }
     }
@@ -168,7 +200,7 @@ export class NaukriProvider {
     if (this.experience) {
       const expInput = this.page
         .getByPlaceholder(/select experience|experience/i)
-        .or(this.page.locator('#expInput'))
+        .or(this.page.locator('#expInput, .nI-gI-sb__experience input, div[class*="exp"]'))
         .first();
 
       if (await expInput.isVisible().catch(() => false)) {
@@ -182,10 +214,14 @@ export class NaukriProvider {
 
     const searchBtn = this.page
       .getByRole('button', { name: /search/i })
-      .or(this.page.locator('.qsbSubmit'))
+      .or(this.page.locator('.qsbSubmit, .nI-gI-sb__btn, button[class*="search"]'))
       .first();
 
-    await searchBtn.click();
+    if (await searchBtn.isVisible().catch(() => false)) {
+      await searchBtn.click();
+    } else {
+      await this.page.keyboard.press('Enter');
+    }
   }
 
   private async extractJobsFromCurrentPage(

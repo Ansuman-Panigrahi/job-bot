@@ -22,9 +22,32 @@ export class BrowserManager {
   public async launch(): Promise<Page> {
     try {
       logger.info(`Launching Chromium (headless: ${this.headless})...`);
-      this.browser = await chromium.launch({ headless: this.headless });
+      this.browser = await chromium.launch({
+        headless: this.headless,
+        args: [
+          '--disable-blink-features=AutomationControlled',
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+        ],
+      });
       this.context = await this.browser.newContext({
-        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+        viewport: { width: 1366, height: 768 },
+        deviceScaleFactor: 1,
+        locale: 'en-US',
+        timezoneId: 'Asia/Kolkata',
+        extraHTTPHeaders: {
+          'Accept-Language': 'en-US,en;q=0.9',
+          'sec-ch-ua': '"Not/A)Brand";v="8", "Chromium";v="126", "Google Chrome";v="126"',
+          'sec-ch-ua-mobile': '?0',
+          'sec-ch-ua-platform': '"Windows"',
+        },
+      });
+      await this.context.addInitScript(() => {
+        Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+        Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+        Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+        (window as any).chrome = { runtime: {} };
       });
       this.page = await this.context.newPage();
       this.page.setDefaultTimeout(this.defaultTimeout);

@@ -1,4 +1,5 @@
 export interface Job {
+  id?: string;
   title: string;
   company: string;
   location: string;
@@ -7,4 +8,5 @@ export interface Job {
   postedDate?: string;
   url: string;
   source: string;
+  createdAt?: string;
 }
